@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import NotesInput from "@/components/NotesInput";
 import SummaryDisplay from "@/components/SummaryDisplay";
+import ChatCloudButton from "@/components/ChatCloudButton";
 import { validateText, cleanText } from "@/lib/textProcessing";
 import { smoothScrollToElement, createConfetti } from "@/lib/animations";
 
@@ -20,7 +21,13 @@ export interface SummaryData {
 
 export default function Home() {
   const [text, setText] = useState("");
+  // Live state for dashboard
   const [summaryData, setSummaryData] = useState<SummaryData | null>(null);
+  
+  // Dashboard quiz state lifted for Chat bot context
+  const [quizAnswers, setQuizAnswers] = useState<Record<number, string>>({});
+  const [quizSubmitted, setQuizSubmitted] = useState(false);
+  const [score, setScore] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [progress, setProgress] = useState(0);
@@ -41,7 +48,11 @@ export default function Home() {
 
     setLoading(true);
     setError("");
+    // Reset summary and quiz states to properly load new content
     setSummaryData(null);
+    setQuizAnswers({});
+    setQuizSubmitted(false);
+    setScore(0);
     setProgress(0);
 
     try {
@@ -135,17 +146,92 @@ export default function Home() {
     }, 200);
   };
 
+  const handleGenerateTargetedQuiz = async () => {
+    if (!summaryData) return;
+    
+    // Find incorrectly answered questions
+    const incorrectQuestions = summaryData.questions.filter((q, index) => {
+      const selectedLetter = quizAnswers[index];
+      if (!selectedLetter) return true; // Unanswered counts as incorrect
+      
+      const normalizedCorrect = q.correct.trim();
+      let correctIndex;
+      if (/^[A-D]$/i.test(normalizedCorrect)) {
+        correctIndex = normalizedCorrect.toUpperCase().charCodeAt(0) - 65;
+      } else {
+        correctIndex = q.options.findIndex(opt => opt.trim().toLowerCase() === normalizedCorrect.toLowerCase());
+      }
+      
+      const selectedIndex = selectedLetter.charCodeAt(0) - 65;
+      return selectedIndex !== correctIndex;
+    }).map(q => q.question).join("\\n- ");
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const cleanedText = cleanText(text);
+      const mcqResponse = await fetch("/api/generate_mcq", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: cleanedText,
+          difficulty: quizDifficulty,
+          count: quizCount,
+          targetedTopics: incorrectQuestions ? `- ${incorrectQuestions}` : undefined
+        }),
+      });
+
+      if (!mcqResponse.ok) {
+        const errorData = await mcqResponse.json();
+        throw new Error(errorData.error || "Failed to generate targeted MCQs");
+      }
+
+      const mcqResult = await mcqResponse.json();
+
+      setSummaryData({
+        ...summaryData,
+        questions: mcqResult.questions,
+      });
+
+      setQuizAnswers({});
+      setQuizSubmitted(false);
+      setScore(0);
+
+      setTimeout(() => {
+        const resultsElement = document.getElementById("results-section");
+        if (resultsElement) {
+          smoothScrollToElement(resultsElement);
+        }
+      }, 300);
+      
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Error generating targeted quiz";
+      setError(message);
+      console.error("Error:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col md:flex-row">
-      {/* Background is now handled directly by body styling in globals.css */}
+      {/* Ambient Moving Orbs */}
+      {/* Optimized Background Orbs (removed heavy blurs and blend modes) */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10 bg-black">
+        <div className="absolute top-1/4 left-1/4 w-[400px] h-[400px] bg-cyan-500/5 rounded-full blur-[80px] animate-float opacity-50 will-change-transform" style={{ animationDuration: '12s' }} />
+        <div className="absolute bottom-1/4 right-1/4 w-[350px] h-[350px] bg-purple-500/5 rounded-full blur-[80px] animate-float opacity-40 will-change-transform" style={{ animationDuration: '15s', animationDelay: '2s' }} />
+      </div>
 
       {/* Sidebar (Floating Logo on Desktop, Top on Mobile) */}
       <aside className="relative md:fixed md:left-0 md:top-0 w-full md:w-auto flex flex-col items-center justify-center p-4 md:p-8 z-50">
-        <a href="/" className="group cursor-pointer flex-shrink-0">
+        <a href="/" className="group cursor-pointer flex-shrink-0 relative">
+          {/* Logo soft pulsing aura behind it */}
+          <div className="absolute inset-0 bg-cyan-500/20 rounded-full filter blur-2xl animate-pulse" style={{ animationDuration: '4s' }} />
           <img 
             src="/logo.png" 
             alt="StudySmart Logo" 
-            className="h-24 md:h-32 lg:h-40 w-auto object-contain transition-all duration-300 group-hover:drop-shadow-[0_0_25px_#0ff] group-active:scale-95 mix-blend-screen"
+            className="relative h-36 md:h-48 lg:h-56 w-auto object-contain transition-all duration-300 group-hover:drop-shadow-[0_4px_25px_rgba(56,189,248,0.4)] group-active:scale-95 mix-blend-screen opacity-90 animate-float"
           />
         </a>
 
@@ -153,7 +239,7 @@ export default function Home() {
         {loading && (
           <div className="absolute top-full left-0 right-0 h-1 bg-slate-900/80">
             <div
-              className="h-full bg-gradient-to-r from-cyan-400 via-magenta-500 to-green-400 transition-all duration-300 shadow-[0_0_10px_rgba(0,255,255,0.8)]"
+              className="h-full bg-gradient-to-r from-cyan-400 via-indigo-500 to-purple-400 transition-all duration-300 shadow-[0_0_12px_rgba(56,189,248,0.5)]"
               style={{ width: `${progress}%` }}
             ></div>
           </div>
@@ -254,10 +340,24 @@ export default function Home() {
           </div>
         ) : (
           <div id="results-section" className="animate-fadeInUp">
-            <SummaryDisplay data={summaryData} onReset={handleReset} />
+            <SummaryDisplay 
+              data={summaryData} 
+              onReset={handleReset}
+              quizState={{ quizAnswers, setQuizAnswers, quizSubmitted, setQuizSubmitted, score, setScore }} 
+              onGenerateTargetedQuiz={handleGenerateTargetedQuiz}
+            />
           </div>
         )}
       </main>
+
+      {/* Conditionally provide dynamic screen context to the floating chatbot */}
+      <ChatCloudButton 
+        contextData={summaryData ? { 
+          summaryData, 
+          quizAnswers, 
+          quizSubmitted 
+        } : null} 
+      />
 
       </div>
     </div>

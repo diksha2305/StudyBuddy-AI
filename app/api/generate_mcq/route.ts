@@ -4,7 +4,7 @@ import { generateMCQ } from "@/lib/groq";
 
 export async function POST(request: NextRequest) {
   try {
-    const { text, difficulty, count } = await request.json();
+    const { text, difficulty, count, targetedTopics } = await request.json();
 
     // Validation
     if (!text || text.trim().length === 0) {
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const questions = await generateMCQ(text, difficulty, numCount);
+    const questions = await generateMCQ(text, difficulty, numCount, targetedTopics);
 
     return NextResponse.json({ questions });
   } catch (error: unknown) {

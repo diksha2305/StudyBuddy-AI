@@ -11,6 +11,7 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as {
       message?: string;
       history?: ChatMessage[];
+      contextData?: any;
     };
 
     const message = (body.message || "").trim();
@@ -38,7 +39,7 @@ export async function POST(request: NextRequest) {
       )
       .slice(-8);
 
-    const reply = await chatWithAssistant(message, sanitizedHistory);
+    const reply = await chatWithAssistant(message, sanitizedHistory, body.contextData);
     return NextResponse.json({ reply });
   } catch (error: unknown) {
     const message =

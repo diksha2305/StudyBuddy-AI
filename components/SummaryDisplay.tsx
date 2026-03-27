@@ -1,6 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import { createConfetti, staggerElements } from "@/lib/animations";
 
 interface SummaryData {
@@ -18,15 +21,50 @@ interface SummaryData {
 interface Props {
   data: SummaryData;
   onReset: () => void;
+  onGenerateTargetedQuiz: () => void;
+  quizState: {
+    quizAnswers: Record<number, string>;
+    setQuizAnswers: React.Dispatch<React.SetStateAction<Record<number, string>>>;
+    quizSubmitted: boolean;
+    setQuizSubmitted: React.Dispatch<React.SetStateAction<boolean>>;
+    score: number;
+    setScore: React.Dispatch<React.SetStateAction<number>>;
+  };
 }
 
 type TabType = "summary" | "terms" | "formulas" | "quiz";
 
-export default function SummaryDisplay({ data, onReset }: Props) {
+function preprocessSummary(text: string): string {
+  if (!text) return "";
+  return text
+    .replace(/\\n/g, "\n")   // fix literal \n
+    .replace(/\\t/g, "\t")   // fix literal \t
+    .trim();
+}
+
+function preprocessMath(text: string): string {
+  if (!text) return "";
+  const cleanedText = preprocessSummary(text);
+  // Only transform text outside existing $...$ / $$...$$ blocks.
+  const segments = cleanedText.split(/(\$\$[\s\S]*?\$\$|\$[^$\n]+\$)/g);
+
+  return segments
+    .map((segment) => {
+      if (segment.startsWith("$")) {
+        return segment;
+      }
+
+      return segment.replace(
+        /\\(?!begin|end|item|n|t)([a-zA-Z]+(?:\{[^}]*\})*(?:\[[^\]]*\])?)/g,
+        (match) => `$${match}$`
+      );
+    })
+    .join("");
+}
+
+export default function SummaryDisplay({ data, onReset, onGenerateTargetedQuiz, quizState }: Props) {
   const [activeTab, setActiveTab] = useState<TabType>("summary");
-  const [quizAnswers, setQuizAnswers] = useState<Record<number, string>>({});
-  const [quizSubmitted, setQuizSubmitted] = useState(false);
-  const [score, setScore] = useState(0);
+  const { quizAnswers, setQuizAnswers, quizSubmitted, setQuizSubmitted, score, setScore } = quizState;
 
   useEffect(() => {
     const tabElements = document.querySelectorAll("[data-tab-content]");
@@ -135,11 +173,13 @@ export default function SummaryDisplay({ data, onReset }: Props) {
         {/* Summary Tab */}
         {activeTab === "summary" && (
           <div data-tab-content className="animate-fadeInUp">
-            <h3 className="text-2xl font-bold text-slate-100 mb-6">Summary</h3>
             <div className="prose prose-invert max-w-none">
-              <p className="text-slate-300 leading-relaxed whitespace-pre-wrap text-lg">
-                {data.summary}
-              </p>
+              <ReactMarkdown 
+                remarkPlugins={[remarkMath]} 
+                rehypePlugins={[rehypeKatex]}
+              >
+                {preprocessMath(data.summary)}
+              </ReactMarkdown>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8 pt-8 border-t border-slate-700/30">
@@ -187,12 +227,17 @@ export default function SummaryDisplay({ data, onReset }: Props) {
                       <span className="text-white text-xs font-bold">{index + 1}</span>
                     </div>
                     <div className="flex-1">
-                      <h4 className="font-bold text-slate-100 text-lg mb-2 group-hover:gradient-text transition-all">
-                        {term.term}
-                      </h4>
-                      <p className="text-slate-300 leading-relaxed">
-                        {term.definition}
-                      </p>
+                      <div className="font-bold text-slate-100 text-lg mb-2 group-hover:gradient-text transition-all [&>p]:inline">
+                        <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{preprocessMath(term.term)}</ReactMarkdown>
+                      </div>
+                      <div className="text-slate-300 leading-relaxed">
+                        <ReactMarkdown 
+                          remarkPlugins={[remarkMath]} 
+                          rehypePlugins={[rehypeKatex]}
+                        >
+                          {preprocessMath(term.definition)}
+                        </ReactMarkdown>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -213,18 +258,23 @@ export default function SummaryDisplay({ data, onReset }: Props) {
                   style={{ animationDelay: `${index * 50}ms` }}
                 >
                   <div>
-                    <h4 className="font-bold text-pink-400 text-lg mb-4 flex items-center gap-2">
-                      <span className="text-2xl">∑</span> {item.name}
-                    </h4>
-                    <div className="bg-slate-900/80 p-4 rounded-lg border border-pink-500/20 mb-4 shadow-inner">
-                      <code className="text-xl md:text-2xl font-mono text-cyan-300 font-bold block text-center">
-                        {item.formula}
-                      </code>
+                    <div className="font-bold text-pink-400 text-lg mb-4 flex items-center gap-2 [&>p]:inline">
+                      <span className="text-2xl">∑</span> <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{preprocessMath(item.name)}</ReactMarkdown>
+                    </div>
+                    <div className="bg-slate-900/80 p-4 rounded-lg border border-pink-500/20 mb-4 shadow-inner text-cyan-300 overflow-x-auto">
+                      <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                        {preprocessMath(item.formula)}
+                      </ReactMarkdown>
                     </div>
                   </div>
-                  <p className="text-slate-300 text-sm leading-relaxed border-t border-slate-700/30 pt-3">
-                    {item.explanation}
-                  </p>
+                  <div className="text-slate-300 text-sm leading-relaxed border-t border-slate-700/30 pt-3">
+                    <ReactMarkdown 
+                      remarkPlugins={[remarkMath]} 
+                      rehypePlugins={[rehypeKatex]}
+                    >
+                      {preprocessMath(item.explanation)}
+                    </ReactMarkdown>
+                  </div>
                 </div>
               ))}
             </div>
@@ -288,12 +338,16 @@ export default function SummaryDisplay({ data, onReset }: Props) {
                   className="p-6 bg-slate-800/30 border border-slate-700/30 rounded-xl hover:bg-slate-800/50 transition-all"
                   style={{ animationDelay: `${qIndex * 50}ms` }}
                 >
-                  <h4 className="font-bold text-slate-100 mb-4 text-lg">
-                    <span className="inline-block mr-3 px-3 py-1 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-full text-sm">
+                  <div className="font-bold text-slate-100 mb-4 text-lg flex items-start gap-3">
+                    <span className="inline-block px-3 py-1 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-full text-sm flex-shrink-0 mt-0.5">
                       {qIndex + 1}
                     </span>
-                    {question.question}
-                  </h4>
+                    <div className="flex-1 [&>p]:inline">
+                      <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                        {preprocessMath(question.question)}
+                      </ReactMarkdown>
+                    </div>
+                  </div>
 
                   <div className="space-y-3">
                     {question.options.map((option, oIndex) => {
@@ -327,15 +381,22 @@ export default function SummaryDisplay({ data, onReset }: Props) {
                           className={buttonClass}
                         >
                           <div className="flex items-center gap-3">
-                            <span className="w-6 h-6 flex items-center justify-center rounded-full border-2 border-current">
+                            <span className="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-full border-2 border-current">
                               {String.fromCharCode(65 + oIndex)}
                             </span>
-                            {option}
+                            <div className="flex-1 text-left [&>p]:inline">
+                              <ReactMarkdown 
+                                remarkPlugins={[remarkMath]} 
+                                rehypePlugins={[rehypeKatex]}
+                              >
+                                {preprocessMath(option)}
+                              </ReactMarkdown>
+                            </div>
                             {showResult && isCorrect && (
-                              <span className="ml-auto text-green-400">✓</span>
+                              <span className="ml-auto flex-shrink-0 text-green-400">✓</span>
                             )}
                             {showResult && isSelected && !isCorrect && (
-                              <span className="ml-auto text-red-400">✗</span>
+                              <span className="ml-auto flex-shrink-0 text-red-400">✗</span>
                             )}
                           </div>
                         </button>
@@ -361,17 +422,31 @@ export default function SummaryDisplay({ data, onReset }: Props) {
                       const isCorrectAnswer = selectedOptionIndex === correctOptionIndex;
 
                       return (
-                    <div className={`mt-4 p-3 rounded-lg text-sm ${
+                    <div className={`mt-4 p-4 rounded-lg text-sm shadow-inner ${
                       isCorrectAnswer
-                        ? "bg-green-500/10 border border-green-500/30 text-green-300"
-                        : "bg-orange-500/10 border border-orange-500/30 text-orange-300"
+                        ? "bg-green-500/10 border border-green-500/30 text-green-300/90"
+                        : "bg-orange-500/10 border border-orange-500/30 text-orange-300/90"
                     }`}>
-                      <p className="font-semibold mb-1">Explanation:</p>
-                      <p>{question.explanation}</p>
+                      <p className="font-bold mb-2 uppercase tracking-wider text-xs opacity-75">Explanation:</p>
+                      <div className="text-base leading-relaxed">
+                        <ReactMarkdown 
+                          remarkPlugins={[remarkMath]} 
+                          rehypePlugins={[rehypeKatex]}
+                        >
+                          {preprocessMath(question.explanation)}
+                        </ReactMarkdown>
+                      </div>
                       {!isCorrectAnswer && (
-                        <p className="mt-2 text-orange-200">
-                          Your answer: <span className="font-semibold">{selectedOptionText}</span>. Correct answer: <span className="font-semibold">{correctOptionText}</span>. Your selected option does not match the key concept tested in this question.
-                        </p>
+                        <div className="mt-3 text-orange-200 border-t border-orange-500/20 pt-3 space-y-2">
+                          <div className="flex gap-2 [&>p]:inline">
+                            <span className="opacity-75">Your answer:</span> 
+                            <span className="font-bold text-slate-100"><ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{preprocessMath(selectedOptionText)}</ReactMarkdown></span>
+                          </div>
+                          <div className="flex gap-2 [&>p]:inline">
+                            <span className="opacity-75">Correct answer:</span> 
+                            <span className="font-bold text-green-400"><ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{preprocessMath(correctOptionText)}</ReactMarkdown></span>
+                          </div>
+                        </div>
                       )}
                     </div>
                       );
@@ -393,6 +468,12 @@ export default function SummaryDisplay({ data, onReset }: Props) {
                 </button>
               ) : (
                 <>
+                  <button
+                    onClick={onGenerateTargetedQuiz}
+                    className="flex-1 btn bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 text-white border-0 shadow-lg shadow-purple-500/20"
+                  >
+                    Target Weak Topics
+                  </button>
                   <button
                     onClick={handleResetQuiz}
                     className="flex-1 btn btn-secondary"

@@ -27,27 +27,52 @@ export const chatWithAssistant = async (
     .filter((item) => item.content.trim().length > 0)
     .slice(-8);
 
-  let systemPrompt = "You are StudySmart assistant. Give concise, helpful learning support for student notes and quizzes. Be friendly, encouraging, and use simple language suitable for a high school student to explain complex topics. ALWAYS use standard Markdown for formatting and use strict LaTeX notation (e.g. `$$ E=mc^2 $$` for standalone blocks or `$ x $` for ANY inline math, variable, or scientific symbol) for ALL scientific content. NEVER use plain text for symbols like theta, u_x, etc.; always wrap them in $ signs (e.g. `$ \\\\theta $`). When writing math or scientific notation, always wrap inline expressions in `$...$` and block equations in `$$...$$`. For example: `The energy is $E=mc^2$` or `The formula is $\\alpha + \\beta = \\gamma$`. If the user asks about their screen or their quiz, you have access to their exact dashboard context below.";
-  
-  if (contextData && contextData.summaryData) {
+  let systemPrompt = `You are StudySmart assistant, a world-class academic mentor. 
+Your goal is to support students and VERIFY their learning.
+
+CRITICAL TASK VERIFICATION RULES:
+1. If a user says "I've finished [Topic]" or "I'm done with [Task]", look for a matching task in their "LIVE DASHBOARD CONTEXT".
+2. If match found, YOU MUST start a 1-question mini-quiz to verify their knowledge. 
+3. Output your response, but append exactly "[QUIZ_START: taskId]" at the end (e.g., "[QUIZ_START: task-123-0]").
+4. Once the user answers, if they are CORRECT, provide positive feedback and append exactly "[VERIFIED: taskId]" at the end.
+5. If they are INCORRECT, explain why and suggest they review the topic. Do NOT add the [VERIFIED] tag.
+
+TONE: Friendly, encouraging, use high-school level language. 
+FORMATTING: ALWAYS use standard Markdown and LaTeX for scientific content (e.g. $ x $ and $$ E=mc^2 $$).
+
+SCHEDULE SYNC & TIME RULES:
+1. If the user suggests they are starting their study session now, or asks to shift their schedule to the current time, YOU MUST append exactly "[SYNC_NOW]" to your response. This will trigger a real-time UI update.
+2. You now have access to the EXACT scheduled times for each task in the "LIVE DASHBOARD CONTEXT". Use this to help the user manage their time.
+3. If a user says "I'll be out" or "I'm busy", look at which tasks conflict with that window and suggest a new plan or a shift.
+4. MUTATION RULE: If the user explicitly asks you to CHANGE, RESCHEDULE, ADD, or DELETE a task on their current dashboard, YOU MUST:
+   - Provide a friendly verbal confirmation (e.g. "Sure, I've updated your schedule!") and WRAP IT in [CONFIRMATION] tags.
+   - Then, output the NEW updated task list as a JSON array inside the [UPDATE_PLAN] tags below.
+   - TIME HANDLING: If a user specifies a specific clock time (e.g. "8:00 PM") for a task, calculate the duration required to reach that time from the previous task, or use "Now" as the baseline. 
+   - Wrap the array EXACTLY like this:
+[CONFIRMATION] {Your verbal response here} [/CONFIRMATION]
+[UPDATE_PLAN]
+[
+  { "task": "Task Name", "type": "High Yield", "estimated_time": "45 mins", "priority": "High", "reason": "..." }
+]
+[/UPDATE_PLAN]
+   - The array must contain ALL tasks for the day. Return ONLY valid JSON inside those tags.`;
+
+  if (contextData && contextData.profile) {
     systemPrompt += `\n\n--- LIVE DASHBOARD CONTEXT ---`;
-    systemPrompt += `\nSUMMARY GENERATED: ${contextData.summaryData.summary}`;
-    if (contextData.summaryData.keyTerms?.length) systemPrompt += `\nKEY TERMS: ${JSON.stringify(contextData.summaryData.keyTerms)}`;
-    if (contextData.summaryData.formulas?.length) systemPrompt += `\nFORMULAS: ${JSON.stringify(contextData.summaryData.formulas)}`;
+    systemPrompt += `\nSTUDENT: ${contextData.profile.name} (${contextData.profile.studyLevel})`;
     
-    if (contextData.summaryData.questions?.length) {
-      systemPrompt += `\nQUIZ QUESTIONS:\n`;
-      contextData.summaryData.questions.forEach((q: any, i: number) => {
-        const userPickedLetter = contextData.quizAnswers ? contextData.quizAnswers[i] : null;
-        let userPickedText = "Did not answer";
-        if (userPickedLetter) {
-          const optIndex = userPickedLetter.charCodeAt(0) - 65;
-          userPickedText = q.options[optIndex] || userPickedLetter;
-        }
-        
-        systemPrompt += `Q${i+1}: ${q.question}\nOptions: ${q.options.join(", ")}\nCorrect Answer: ${q.correct}\nExplanation: ${q.explanation}\nUser Selected: ${userPickedText}\n`;
-      });
-    }
+    contextData.profile.events.forEach((event: any) => {
+      systemPrompt += `\nTARGET: ${event.name}`;
+      if (event.current_schedule) {
+        systemPrompt += `\nTASKS: ${JSON.stringify(event.current_schedule.map((t: any) => ({
+          id: t.id,
+          task: t.task,
+          scheduled: `${t.startTime} - ${t.endTime}`,
+          duration: t.estimated_time,
+          reason: t.reason
+        })))}`;
+      }
+    });
     systemPrompt += `\n------------------------------`;
   }
 

@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 import { streamTextInChunks, createParticleBurst } from "@/lib/animations";
+import { useUser } from "@/lib/UserContext";
+import { calculateEventSchedule } from "@/lib/scheduler";
 
 interface Message {
   id: string;
@@ -11,14 +13,27 @@ interface Message {
 }
 
 export default function ChatAssistant() {
+  const { 
+    profile, 
+    toggleTaskCompletion, 
+    saveEventHistory, 
+    updateEvent, 
+    syncAllSchedules,
+    updateEventPlanTasks,
+  } = useUser();
   const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([
+  const [activeEventId, setActiveEventId] = useState<string | null>(null);
+  const [activeEventName, setActiveEventName] = useState<string>("");
+  
+  const initialMessage: Message[] = [
     {
       id: "welcome",
       role: "assistant",
       content: "👋 Hi! I'm StudySmart Assistant. Ask me anything about your study materials!",
     },
-  ]);
+  ];
+  
+  const [messages, setMessages] = useState<Message[]>(initialMessage);
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -31,6 +46,54 @@ export default function ChatAssistant() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Global event listener for task verification requests
+  useEffect(() => {
+    const handleVerifyEvent = (e: CustomEvent<{ taskId: string; taskName: string; eventId: string }>) => {
+      const { taskId, taskName, eventId } = e.detail;
+      
+      // Auto-switch context to this event
+      setActiveEventId(eventId);
+      setIsOpen(true);
+      
+      const verifyMsg = `I have finished the task: "${taskName}". Please quiz me to verify this (Task ID: ${taskId})!`;
+      setInputValue(verifyMsg);
+    };
+
+    const handleFocusEvent = (e: CustomEvent<{ eventId: string; eventName: string }>) => {
+      const { eventId, eventName } = e.detail;
+      if (activeEventId !== eventId) {
+        setActiveEventId(eventId);
+        setActiveEventName(eventName);
+      }
+    };
+
+    window.addEventListener('verify-task' as any, handleVerifyEvent as any);
+    window.addEventListener('focus-event' as any, handleFocusEvent as any);
+    return () => {
+      window.removeEventListener('verify-task' as any, handleVerifyEvent as any);
+      window.removeEventListener('focus-event' as any, handleFocusEvent as any);
+    };
+  }, [activeEventId]);
+
+  // Load history when active event changes
+  useEffect(() => {
+    if (activeEventId) {
+      const event = profile.events.find(ev => ev.id === activeEventId);
+      if (event && event.chatHistory) {
+        setMessages(event.chatHistory);
+      } else {
+        setMessages(initialMessage);
+      }
+    }
+  }, [activeEventId, profile.events]);
+  
+  // Auto-send when inputValue is set by verification event
+  useEffect(() => {
+    if (inputValue.includes("Please quiz me to verify this (Task ID: task-")) {
+      handleSendMessage();
+    }
+  }, [inputValue]);
 
   const handleSendMessage = async () => {
     if (!inputValue.trim()) return;
@@ -47,6 +110,15 @@ export default function ChatAssistant() {
     setIsLoading(true);
 
     try {
+      const eventsToSend = activeEventId 
+        ? profile.events.filter(e => e.id === activeEventId)
+        : profile.events;
+
+      const enrichedEvents = eventsToSend.map(event => ({
+        ...event,
+        current_schedule: calculateEventSchedule(event)
+      }));
+
       // Call chat API
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -57,6 +129,12 @@ export default function ChatAssistant() {
             role: m.role,
             content: m.content,
           })),
+          contextData: { 
+            profile: {
+              ...profile,
+              events: enrichedEvents
+            }
+          }
         }),
       });
 
@@ -78,17 +156,81 @@ export default function ChatAssistant() {
       let streamedContent = "";
       for await (const chunk of streamTextInChunks(data.reply, 15, 40)) {
         streamedContent += chunk;
+        let displayContent = streamedContent;
+
+        // Hide the raw JSON output and machine tags from the user.
+        // We only want to show what's inside [CONFIRMATION] or what's before [UPDATE_PLAN].
+        if (displayContent.includes("[CONFIRMATION]")) {
+           const match = displayContent.match(/\[CONFIRMATION\]([\s\S]*?)\[\/CONFIRMATION\]/);
+           if (match) displayContent = match[1].trim();
+           else displayContent = displayContent.split("[CONFIRMATION]")[1] || "Processing Update...";
+        } else if (displayContent.includes("[UPDATE_PLAN]")) {
+           displayContent = displayContent.split("[UPDATE_PLAN]")[0].trim() || "Updating your dashboard...";
+        }
+
+        // Add a visual indicator if an update is happening
+        if (streamedContent.includes("[UPDATE_PLAN]") && !streamedContent.includes("[/UPDATE_PLAN]")) {
+           displayContent += "\n\n🔄 *Synchronizing Dashboard...*";
+        }
+        
         setMessages((prev) => {
           const updated = [...prev];
-          updated[updated.length - 1].content = streamedContent;
+          updated[updated.length - 1].content = displayContent;
           return updated;
         });
       }
 
-      // Remove streaming flag
+      // Check for Dashboard Mutations
+      let finalStoredContent = streamedContent;
+      const updateMatch = streamedContent.match(/\[UPDATE_PLAN\]([\s\S]*?)\[\/UPDATE_PLAN\]/);
+      
+      if (updateMatch && activeEventId) {
+        try {
+          const rawBlock = updateMatch[1].trim().replace(/```json/g, "").replace(/```/g, "");
+          const newTasks = JSON.parse(rawBlock);
+          
+          // Use the dynamic atomic helper to prevent stale closures
+          updateEventPlanTasks(activeEventId, newTasks);
+          
+          console.log("✅ Dashboard Mutated Atomically from Chat Assistant");
+        } catch (e) {
+          console.error("Failed to parse AI dashboard mutation:", e);
+        }
+        
+        // Clean up ALL tags for final storage
+        finalStoredContent = finalStoredContent
+          .replace(/\[UPDATE_PLAN\][\s\S]*?\[\/UPDATE_PLAN\]/g, "")
+          .replace(/\[CONFIRMATION\]/g, "")
+          .replace(/\[\/CONFIRMATION\]/g, "")
+          .trim();
+        
+        if (!finalStoredContent) finalStoredContent = "✅ *Dashboard has been updated!*";
+        else finalStoredContent += "\n\n✅ *Dashboard updated!*";
+      }
+
+      // Check for verification, quiz, or sync signals
+      if (finalStoredContent.includes("[VERIFIED:")) {
+        const match = finalStoredContent.match(/\[VERIFIED:\s*(task-[^\]]+)\]/);
+        if (match && match[1]) {
+          const taskId = match[1];
+          const [_, eventId, taskIdx] = taskId.split("-");
+          toggleTaskCompletion(eventId, taskId);
+          import("@/lib/animations").then(lib => lib.createConfetti()); // Celebrate!
+        }
+      }
+
+      if (finalStoredContent.includes("[SYNC_NOW]")) {
+        window.dispatchEvent(new CustomEvent("sync-schedule")); // Trigger UI shift
+      }
+
+      // Save history back to context with the cleaned text
       setMessages((prev) => {
         const updated = [...prev];
+        updated[updated.length - 1].content = finalStoredContent;
         updated[updated.length - 1].isStreaming = false;
+        if (activeEventId) {
+          saveEventHistory(activeEventId, updated);
+        }
         return updated;
       });
     } catch (error) {
@@ -169,8 +311,10 @@ export default function ChatAssistant() {
           {/* Header */}
           <div className="bg-gradient-to-r from-cyan-500/10 to-purple-500/10 border-b border-slate-700/30 p-4 flex items-center justify-between">
             <div>
-              <h3 className="font-bold text-slate-100">StudySmart Assistant</h3>
-              <p className="text-xs text-slate-400">Always ready to help</p>
+              <h3 className="font-bold text-slate-100 italic">StudySmart Assistant</h3>
+              <p className="text-[10px] text-cyan-400 font-bold uppercase tracking-widest animate-pulse">
+                {activeEventName ? `Focusing: ${activeEventName}` : "General Mentor"}
+              </p>
             </div>
             <button
               onClick={toggleChat}

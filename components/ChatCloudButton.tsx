@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { streamTextInChunks } from "@/lib/animations";
+import { useUser } from "@/lib/UserContext";
 
 type ChatMessage = {
   id: string;
@@ -39,6 +40,8 @@ export default function ChatCloudButton({ contextData }: ChatCloudButtonProps) {
   ]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  
+  const { profile, updateProfile } = useUser();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -46,7 +49,16 @@ export default function ChatCloudButton({ contextData }: ChatCloudButtonProps) {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+    // Sync chat context to global profile for dynamic planner optimization
+    if (profile.isLoggedIn && messages.length > 1) {
+      // Use setTimeout to avoid strictly synchronous render loops
+      setTimeout(() => {
+        updateProfile({
+          chatHistorySnapshot: messages.map(m => ({ role: m.role, content: m.content })).slice(-15)
+        });
+      }, 0);
+    }
+  }, [messages, profile.isLoggedIn]);
 
   const sendMessage = async () => {
     const message = input.trim();

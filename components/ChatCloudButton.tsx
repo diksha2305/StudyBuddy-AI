@@ -6,6 +6,12 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { streamTextInChunks } from "@/lib/animations";
 import { useUser } from "@/lib/UserContext";
+import { 
+  SparklesIcon, 
+  PaperAirplaneIcon, 
+  XMarkIcon,
+  ChatBubbleLeftRightIcon
+} from "@heroicons/react/24/solid";
 
 type ChatMessage = {
   id: string;
@@ -17,16 +23,12 @@ type ChatMessage = {
 function preprocessSummary(text: string): string {
   if (!text) return "";
   return text
-    .replace(/\\n/g, "\n")   // fix literal \n
-    .replace(/\\t/g, "\t")   // fix literal \t
+    .replace(/\\n/g, "\n")
+    .replace(/\\t/g, "\t")
     .trim();
 }
 
-type ChatCloudButtonProps = {
-  contextData?: any;
-};
-
-export default function ChatCloudButton({ contextData }: ChatCloudButtonProps) {
+export default function ChatCloudButton({ contextData }: { contextData?: any }) {
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -34,24 +36,18 @@ export default function ChatCloudButton({ contextData }: ChatCloudButtonProps) {
     {
       id: "welcome",
       role: "assistant",
-      content:
-        "👋 Hi! I'm your StudySmart AI core. Ask me to explain concepts, create practice questions, or clarify complex topics from your notes!",
+      content: "👋 Ready for the next intelligence cycle? I am your StudySmart AI core, calibrated for real-time concept synthesis.",
     },
   ]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  
   const { profile, updateProfile } = useUser();
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
 
   useEffect(() => {
     scrollToBottom();
-    // Sync chat context to global profile for dynamic planner optimization
     if (profile.isLoggedIn && messages.length > 1) {
-      // Use setTimeout to avoid strictly synchronous render loops
       setTimeout(() => {
         updateProfile({
           chatHistorySnapshot: messages.map(m => ({ role: m.role, content: m.content })).slice(-15)
@@ -66,7 +62,6 @@ export default function ChatCloudButton({ contextData }: ChatCloudButtonProps) {
 
     const userMessage: ChatMessage = { id: Date.now().toString(), role: "user", content: message };
     const nextMessages = [...messages, userMessage];
-    
     setMessages(nextMessages);
     setInput("");
     setLoading(true);
@@ -75,170 +70,98 @@ export default function ChatCloudButton({ contextData }: ChatCloudButtonProps) {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message,
-          history: nextMessages.filter((item) => item.role !== "assistant" || item.content !== messages[0]?.content).map(m => ({ role: m.role, content: m.content })),
-          contextData,
-        }),
+        body: JSON.stringify({ message, history: nextMessages.map(m => ({ role: m.role, content: m.content })), contextData }),
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to connect to the AI model.");
-      }
-
-      const data = (await response.json()) as { reply: string };
+      if (!response.ok) throw new Error("Connection Failure");
+      const data = await response.json();
       
       const assistantMessageId = (Date.now() + 1).toString();
-      setMessages((prev) => [
-        ...prev,
-        { id: assistantMessageId, role: "assistant", content: "", isStreaming: true },
-      ]);
+      setMessages(prev => [...prev, { id: assistantMessageId, role: "assistant", content: "", isStreaming: true }]);
 
       let streamedContent = "";
       for await (const chunk of streamTextInChunks(data.reply, 10, 30)) {
         streamedContent += chunk;
-        setMessages((prev) => 
-          prev.map((msg) =>
-            msg.id === assistantMessageId
-              ? { ...msg, content: streamedContent }
-              : msg
-          )
-        );
-        scrollToBottom();
+        setMessages(prev => prev.map(msg => msg.id === assistantMessageId ? { ...msg, content: streamedContent } : msg));
       }
-
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === assistantMessageId ? { ...msg, isStreaming: false } : msg
-        )
-      );
-    } catch (error: unknown) {
-      const messageText = error instanceof Error ? error.message : "Error connecting to AI";
-      setMessages((prev) => [
-        ...prev,
-        { id: Date.now().toString(), role: "assistant", content: `❌ Error: ${messageText}` },
-      ]);
+      setMessages(prev => prev.map(msg => msg.id === assistantMessageId ? { ...msg, isStreaming: false } : msg));
+    } catch (err) {
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: "assistant", content: "❌ ERROR: Neural link offline. Please re-calibrate." }]);
     } finally {
       setLoading(false);
       setTimeout(() => inputRef.current?.focus(), 100);
     }
   };
 
-  const handleInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      void sendMessage();
-    }
-  };
-
   return (
     <>
-      <div className={`fixed bottom-28 right-4 sm:right-6 z-50 w-[calc(100vw-2rem)] max-w-md transition-all duration-500 origin-bottom-right ${
-        isOpen ? "scale-100 opacity-100 pointer-events-auto" : "scale-95 opacity-0 pointer-events-none"
-      }`}>
-        <div className="flex flex-col h-[550px] max-h-[75vh] rounded-3xl border border-cyan-500/40 bg-[#070b14] shadow-[0_0_50px_rgba(0,255,255,0.15)] overflow-hidden">
-          {/* Header */}
-          <div className="flex items-center justify-between bg-gradient-to-r from-cyan-950/80 to-purple-950/80 border-b border-cyan-500/30 px-5 py-4">
+      <div className={`fixed bottom-28 right-4 sm:right-10 z-50 w-[calc(100vw-2rem)] max-w-md transition-all duration-700 cubic-bezier(0.19, 1, 0.22, 1) ${isOpen ? "translate-y-0 opacity-100 scale-100" : "translate-y-10 opacity-0 scale-95 pointer-events-none"}`}>
+        <div className="bg-[#05070a] rounded-[40px] border-2 border-slate-900 shadow-[0_40px_100px_rgba(0,0,0,1)] overflow-hidden flex flex-col h-[600px] max-h-[80vh]">
+          
+          <div className="bg-[#0a0e14] border-b border-white/5 px-8 py-6 flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="relative flex h-12 w-12 items-center justify-center rounded-full bg-cyan-500/20 shadow-[0_0_20px_rgba(0,255,255,0.4)]">
-                <div className="absolute inset-0 rounded-full border-2 border-cyan-400/50 animate-ping opacity-20"></div>
-                <svg className="h-6 w-6 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
+              <div className="w-12 h-12 bg-cyan-400/10 rounded-2xl flex items-center justify-center border border-cyan-400/30">
+                 <SparklesIcon className="w-6 h-6 text-cyan-400 animate-pulse" />
               </div>
               <div>
-                <h3 className="font-bold text-slate-100 tracking-wide text-base">Study AI Core</h3>
-                <p className="text-xs text-cyan-400/80 font-mono tracking-widest uppercase mt-0.5">Neural Interface</p>
+                 <h3 className="text-xl font-black text-white italic uppercase tracking-tighter leading-none">Neural Hub</h3>
+                 <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-1 italic">Active Synthesis Mode</p>
               </div>
             </div>
-            <button onClick={() => setIsOpen(false)} className="rounded-full p-2 text-slate-400 hover:bg-slate-800/80 hover:text-cyan-400 transition-colors">
-              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
+            <button onClick={() => setIsOpen(false)} className="p-2 text-slate-600 hover:text-white transition-colors"><XMarkIcon className="w-6 h-6" /></button>
           </div>
 
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-5 space-y-5 scrollbar-thin scrollbar-thumb-cyan-500/30 scrollbar-track-transparent">
-            {messages.map((item) => (
-              <div key={item.id} className={`flex ${item.role === "user" ? "justify-end" : "justify-start"} animate-fadeInUp`}>
-                <div className={`max-w-[85%] px-5 py-3.5 text-sm leading-relaxed ${
-                  item.role === "user"
-                    ? "rounded-2xl rounded-br-none bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-lg shadow-cyan-900/40"
-                    : "rounded-2xl rounded-bl-none border border-slate-700/60 bg-slate-800/80 text-slate-200 shadow-md prose prose-invert max-w-none"
-                }`}>
-                  {item.role === "user" ? (
-                    <p className="whitespace-pre-wrap font-medium">{item.content}</p>
-                  ) : (
-                    <div className="prose prose-invert prose-sm max-w-none">
-                      <ReactMarkdown 
-                        remarkPlugins={[remarkMath]} 
-                        rehypePlugins={[rehypeKatex]}
-                      >
-                        {preprocessSummary(item.content) + (item.isStreaming ? " █" : "")}
-                      </ReactMarkdown>
-                    </div>
-                  )}
+          <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-thin scrollbar-thumb-slate-900">
+             {messages.map(item => (
+                <div key={item.id} className={`flex ${item.role === 'user' ? 'justify-end' : 'justify-start'} animate-fadeInUp`}>
+                   <div className={`max-w-[85%] px-6 py-4 rounded-3xl ${item.role === 'user' ? 'bg-cyan-400 text-slate-900 font-bold shadow-3xl rounded-br-none' : 'bg-slate-900 border border-white/5 text-slate-300 rounded-bl-none shadow-xl'}`}>
+                      {item.role === 'user' ? <p className="text-sm leading-relaxed">{item.content}</p> : (
+                        <div className="prose prose-invert prose-sm max-w-none prose-p:leading-relaxed prose-p:text-slate-300">
+                           <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                              {preprocessSummary(item.content) + (item.isStreaming ? " █" : "")}
+                           </ReactMarkdown>
+                        </div>
+                      )}
+                   </div>
                 </div>
-              </div>
-            ))}
-            {loading && (
-              <div className="flex justify-start animate-fadeInUp">
-                <div className="rounded-2xl rounded-bl-none border border-cyan-500/30 bg-cyan-950/40 px-5 py-4 shadow-[0_0_15px_rgba(0,255,255,0.15)]">
-                  <div className="flex gap-2 items-center h-4">
-                    <div className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }}></div>
-                    <div className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }}></div>
-                    <div className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }}></div>
+             ))}
+             {loading && (
+               <div className="flex justify-start">
+                  <div className="bg-slate-900 px-6 py-4 rounded-3xl rounded-bl-none border border-white/5 flex gap-1.5 items-center">
+                     <div className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce" />
+                     <div className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce [animation-delay:200ms]" />
+                     <div className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce [animation-delay:400ms]" />
                   </div>
-                </div>
-              </div>
-            )}
-            <div ref={messagesEndRef} className="h-2" />
+               </div>
+             )}
+             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input Area */}
-          <div className="border-t border-cyan-500/30 bg-slate-900/80 p-4 relative">
-            <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-cyan-500 to-transparent opacity-50"></div>
-            <div className="relative flex items-center">
-              <input
-                ref={inputRef}
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleInputKeyDown}
-                placeholder="Initialize query..."
-                disabled={loading}
-                className="w-full rounded-2xl border border-slate-700 bg-slate-950/80 py-3.5 pl-5 pr-14 text-sm font-medium text-slate-100 placeholder:text-slate-500 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 focus:outline-none transition-all shadow-inner"
-              />
-              <button
-                onClick={() => void sendMessage()}
-                disabled={loading || !input.trim()}
-                className="absolute right-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 p-2 text-white transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 shadow-md shadow-cyan-900/50"
-              >
-                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 12h14M12 5l7 7-7 7"/></svg>
-              </button>
-            </div>
+          <div className="bg-[#0a0e14] border-t border-white/5 p-6 pb-8">
+             <div className="bg-[#05070a] rounded-2xl border-2 border-slate-900 focus-within:border-cyan-400/30 transition-all flex items-center pr-2 group">
+                <input 
+                  ref={inputRef}
+                  value={input} 
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && sendMessage()}
+                  placeholder="Initialize command..." 
+                  className="flex-1 bg-transparent border-none focus:ring-0 text-white font-bold p-5 placeholder:text-slate-700 placeholder:italic"
+                />
+                <button onClick={sendMessage} className="p-3 bg-cyan-400 text-slate-900 rounded-xl shadow-xl hover:scale-105 active:scale-95 transition-all">
+                   <PaperAirplaneIcon className="w-5 h-5 -rotate-45" />
+                </button>
+             </div>
           </div>
         </div>
       </div>
 
-      {/* Floating Orbital Button */}
-      <div className="fixed bottom-6 right-6 z-50 flex items-center justify-center">
-          {/* Ambient Glow */}
-          <div className="absolute inset-x-0 -bottom-10 h-32 bg-cyan-500/10 blur-3xl opacity-50 rounded-full mix-blend-screen pointer-events-none" />
-        
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          className="relative flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-tr from-cyan-500 to-purple-500 text-white shadow-[0_0_40px_rgba(0,255,255,0.6)] transition-all duration-300 hover:scale-110 active:scale-95 hover:shadow-[0_0_50px_rgba(0,255,255,0.8)] animate-float"
-          aria-label="Toggle Chat"
-        >
-          {/* Pulsing Aura */}
-          <div className="absolute inset-0 bg-cyan-400/30 rounded-full filter blur-xl animate-pulse -z-10" style={{ animationDuration: '3s' }} />
-          {isOpen ? (
-            <svg className="h-7 w-7 transition-all duration-300 rotate-90" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
-          ) : (
-            <svg className="h-7 w-7 transition-all duration-300" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
-          )}
-        </button>
-      </div>
+      <button 
+        onClick={() => setIsOpen(!isOpen)}
+        className={`fixed bottom-6 right-6 z-50 w-20 h-20 bg-gradient-to-tr from-cyan-400 to-indigo-600 rounded-[30px] flex items-center justify-center shadow-[0_0_50px_rgba(34,211,238,0.5)] transition-all duration-500 active:scale-95 ${isOpen ? "rotate-[360deg] scale-90" : "hover:scale-110 hover:shadow-[0_0_60px_rgba(34,211,238,0.7)]"}`}
+      >
+        <div className="absolute inset-0 bg-white/20 rounded-[30px] animate-pulse scale-90" />
+        {isOpen ? <XMarkIcon className="w-10 h-10 text-white" /> : <ChatBubbleLeftRightIcon className="w-10 h-10 text-white" />}
+      </button>
     </>
   );
 }

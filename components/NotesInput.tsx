@@ -1,9 +1,14 @@
 "use client";
 
-import { useState, useRef } from "react";
-import { extractPDFText } from "@/lib/pdfExtractor";
+import { useState, useRef, ChangeEvent } from "react";
+import { 
+  CloudArrowUpIcon, 
+  DocumentArrowUpIcon,
+  SparklesIcon,
+  ChevronRightIcon
+} from "@heroicons/react/24/solid";
 
-interface Props {
+interface NotesInputProps {
   value: string;
   onChange: (text: string) => void;
   onGenerate: () => void;
@@ -12,7 +17,6 @@ interface Props {
   setDifficulty: (diff: "Easy" | "Medium" | "Hard") => void;
   questionCount: number;
   setQuestionCount: (count: number) => void;
-  variant?: "full" | "compact";
 }
 
 export default function NotesInput({
@@ -23,320 +27,178 @@ export default function NotesInput({
   difficulty,
   setDifficulty,
   questionCount,
-  setQuestionCount,
-  variant = "full",
-}: Props) {
-  const [isDragActive, setIsDragActive] = useState(false);
-  const [filePreview, setFilePreview] = useState<string>("");
-  const [isExtracting, setIsExtracting] = useState(false);
+  setQuestionCount
+}: NotesInputProps) {
+  const [dragActive, setDragActive] = useState(false);
+  const [fileName, setFileName] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const textAreaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (e.type === "dragenter" || e.type === "dragover") {
-      setIsDragActive(true);
+      setDragActive(true);
     } else if (e.type === "dragleave") {
-      setIsDragActive(false);
+      setDragActive(false);
     }
   };
 
-  const processFile = async (file: File) => {
-    setIsExtracting(true);
-    setFilePreview(`📄 ${file.name} (${(file.size / 1024).toFixed(2)} KB)`);
-
-    try {
-      let extractedText = "";
-
-      if (file.type === "application/pdf") {
-        extractedText = await extractPDFText(file);
-      } else if (file.type === "text/plain") {
-        extractedText = await file.text();
-      } else {
-        throw new Error("Unsupported file type. Please use PDF or TXT files.");
-      }
-
-      onChange(extractedText);
-      setFilePreview(
-        `✓ Extracted ${extractedText.split(/\s+/).length} words from ${file.name}`,
-      );
-    } catch (error) {
-      setFilePreview(
-        `✗ Error reading file: ${error instanceof Error ? error.message : "Unknown error"}`,
-      );
-    } finally {
-      setIsExtracting(false);
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setIsDragActive(false);
-
-    const files = e.dataTransfer.files;
-    if (files && files[0]) {
-      processFile(files[0]);
-    }
-  };
-
-  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      processFile(e.target.files[0]);
-    }
-  };
-
-  const handlePaste = async (e: React.ClipboardEvent) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].type.includes("image")) {
-        const file = items[i].getAsFile();
-        if (file) processFile(file);
-        break;
+    setDragActive(false);
+    
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const file = e.dataTransfer.files[0];
+      if (file.type === "application/pdf") {
+        setFileName(file.name);
+        try {
+          const { extractPDFText } = await import("@/lib/pdfExtractor");
+          const text = await extractPDFText(file);
+          onChange(text);
+          setFileName(`✓ Extracted ${file.name}`);
+        } catch (err) {
+          setFileName(`✗ Failed: ${file.name}`);
+        }
+      } else {
+        alert("System error: Only PDF formats are accepted for intelligent extraction.");
       }
     }
   };
 
-  const clearText = () => {
-    onChange("");
-    setFilePreview("");
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
+  const handleFileSelect = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setFileName(file.name);
+      try {
+        const { extractPDFText } = await import("@/lib/pdfExtractor");
+        const text = await extractPDFText(file);
+        onChange(text);
+        setFileName(`✓ Extracted ${file.name}`);
+      } catch (err) {
+        setFileName(`✗ Failed: ${file.name}`);
+      }
     }
-    textAreaRef.current?.focus();
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-4">
-        {variant !== "compact" && (
-          <>
-            {/* File Upload Area */}
-            <div
-              onDragEnter={handleDrag}
-              onDragLeave={handleDrag}
-              onDragOver={handleDrag}
-              onDrop={handleDrop}
-              className={`relative group rounded-xl border-2 border-dashed transition-all duration-300 cursor-pointer ${
-                isDragActive
-                  ? "border-cyan-400 bg-cyan-500/10 shadow-lg shadow-cyan-500/30"
-                  : "border-slate-700 hover:border-slate-600 hover:bg-slate-800/30"
-              }`}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                onChange={handleFileInput}
-                accept=".pdf,.txt"
-                className="hidden"
-              />
-
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                className="p-4 sm:p-8 text-center hover:bg-slate-800/30 transition-colors rounded-xl"
-              >
-                <div className="mb-4 flex justify-center">
-                  <svg
-                    className={`w-12 h-12 transition-all duration-300 ${
-                      isDragActive
-                        ? "text-cyan-400 scale-125"
-                        : "text-slate-400 group-hover:text-slate-300"
-                    }`}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={1.5}
-                      d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33A3 3 0 0116.5 19.5H6.75z"
-                    />
-                  </svg>
-                </div>
-
-                {isExtracting ? (
-                  <div>
-                    <p className="text-slate-300 font-semibold">
-                      Processing file...
-                    </p>
-                    <div className="mt-2 flex justify-center">
-                      <div className="spinner"></div>
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <p className="text-slate-200 font-semibold">
-                      Drop your file here or click to upload
-                    </p>
-                    <p className="text-slate-400 text-sm mt-2">
-                      Supports PDF & TXT files
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {isDragActive && (
-                <div className="absolute inset-0 bg-cyan-500/5 rounded-xl pointer-events-none"></div>
-              )}
-            </div>
-
-            {/* Divider */}
-            <div className="relative py-4">
-              <div className="absolute inset-x-0 top-1/2 h-px bg-gradient-to-r from-transparent via-slate-700 to-transparent"></div>
-              <div className="relative flex justify-center">
-                <span className="px-3 bg-slate-900/80 text-sm text-slate-400">
-                  OR
-                </span>
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* File Preview */}
-        {filePreview && (
-          <div className="p-3 bg-slate-800/40 border border-slate-700/30 rounded-lg text-sm text-slate-300 animate-fadeInUp">
-            {filePreview}
-          </div>
-        )}
-
-        {/* Textarea */}
-        <div className="relative group">
-          <textarea
-            ref={textAreaRef}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            onPaste={handlePaste}
-            placeholder="Paste your study notes here..."
-            className={`w-full bg-slate-800/40 border border-slate-700 rounded-xl px-5 py-4 text-slate-100 placeholder-slate-500 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30 focus:outline-none transition-all resize-none shadow-inner ${
-              variant === "compact"
-                ? "min-h-[120px] text-xs"
-                : "min-h-[250px] text-sm font-mono leading-relaxed"
-            }`}
-          />
-
-          {/* Character count */}
-          <div className="absolute bottom-3 right-3 text-xs text-slate-500 bg-slate-900/80 px-2 py-1 rounded">
-            {value.length > 0 ? `${value.length} chars` : "Start typing..."}
-          </div>
+    <div className="space-y-8 animate-fadeIn">
+      {/* Target Area: Input */}
+      <div className="space-y-6">
+        <div className="flex items-center justify-between px-2">
+             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Operational Input Area</label>
+             <span className="text-[10px] font-black text-cyan-400 uppercase tracking-widest leading-none bg-cyan-400/10 px-2 py-0.5 rounded border border-cyan-400/20">Ready for data</span>
         </div>
+        
+        <div className="bg-[#0a0e14] rounded-[32px] border-2 border-slate-950 p-6 shadow-3xl group overflow-hidden relative">
+            <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-cyan-400/50 to-transparent opacity-0 group-focus-within:opacity-100 transition-opacity" />
+            
+            <textarea
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                placeholder="No notes yet — upload a PDF or type to begin learning smarter..."
+                className="w-full bg-transparent border-none focus:ring-0 text-slate-100 placeholder-slate-600 min-h-[250px] text-lg font-medium leading-relaxed resize-none transition-all scrollbar-thin scrollbar-thumb-slate-800"
+            />
 
-        <div className="flex flex-col gap-3">
-          {/* Quiz Settings */}
-          {variant !== "compact" && (
-            <div className="flex flex-col sm:flex-row gap-4 p-4 bg-slate-800/30 border border-slate-700/50 rounded-xl">
-              <div className="flex-1">
-                <label className="block text-sm font-semibold text-slate-300 mb-2">
-                  Quiz Difficulty
-                </label>
-                <select
-                  value={difficulty}
-                  onChange={(e) =>
-                    setDifficulty(e.target.value as "Easy" | "Medium" | "Hard")
-                  }
-                  disabled={isLoading}
-                  className="w-full bg-slate-900/50 border border-slate-700 text-slate-100 rounded-lg px-4 py-2.5 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30 transition-all outline-none"
-                >
-                  <option value="Easy">Easy</option>
-                  <option value="Medium">Medium</option>
-                  <option value="Hard">Hard</option>
-                </select>
-              </div>
-              <div className="flex-1">
-                <label className="block text-sm font-semibold text-slate-300 mb-2">
-                  Number of Questions
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={questionCount}
-                  onChange={(e) =>
-                    setQuestionCount(parseInt(e.target.value) || 5)
-                  }
-                  disabled={isLoading}
-                  className="w-full bg-slate-900/50 border border-slate-700 text-slate-100 rounded-lg px-4 py-2.5 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30 transition-all outline-none"
-                />
-              </div>
+            {/* Float Menu for File Upload */}
+            <div className="absolute bottom-4 right-4 flex items-center gap-2">
+                 {fileName && (
+                    <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 px-4 py-2 rounded-2xl text-emerald-400 text-xs font-black animate-fadeInScale">
+                       <DocumentArrowUpIcon className="w-4 h-4" />
+                       {fileName}
+                    </div>
+                 )}
+                 <button 
+                   onClick={() => fileInputRef.current?.click()}
+                   onDragEnter={handleDrag}
+                   onDragOver={handleDrag}
+                   onDragLeave={handleDrag}
+                   onDrop={handleDrop}
+                   className={`p-3 rounded-2xl border transition-all shadow-xl group/btn ${dragActive ? "bg-cyan-500 text-slate-900 border-cyan-400 scale-105" : "bg-slate-900 border-white/5 text-slate-400 hover:text-cyan-400 hover:border-cyan-400/50"}`}
+                 >
+                   <CloudArrowUpIcon className="w-6 h-6" />
+                 </button>
+                 <input ref={fileInputRef} type="file" accept=".pdf" className="hidden" onChange={handleFileSelect} />
             </div>
-          )}
-
-          <div className="flex gap-2">
-            <button
-              onClick={onGenerate}
-              disabled={!value.trim() || isLoading}
-              className="flex-1 btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-cyan-500/30"
-            >
-              {isLoading ? (
-                <>
-                  <div className="spinner-sm"></div>
-                  <span>Generating...</span>
-                </>
-              ) : (
-                <>
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M13 10V3L4 14h7v7l9-11h-7z"
-                    />
-                  </svg>
-                  <span>
-                    {variant === "compact"
-                      ? "Summarize"
-                      : "Generate Learning Material"}
-                  </span>
-                </>
-              )}
-            </button>
-
-            {value.trim() && (
-              <button
-                onClick={clearText}
-                disabled={isLoading}
-                className="btn btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            )}
-          </div>
         </div>
       </div>
 
-      {/* Tips */}
-      {variant !== "compact" && (
-        <div className="p-4 bg-slate-800/30 border border-slate-700/30 rounded-lg mt-4">
-          <p className="text-xs text-slate-400 mb-2 font-semibold">
-            💡 Tips for best results:
-          </p>
-          <ul className="space-y-1 text-xs text-slate-500">
-            <li>• Paste at least 100 words for better summaries</li>
-            <li>• Use clear, well-structured content</li>
-            <li>• PDF files work best for textbooks and articles</li>
-          </ul>
+      {/* Control Configuration Panel */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+        <div className="bg-slate-900 p-6 rounded-3xl border border-white/5 shadow-xl space-y-4">
+            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest italic flex items-center gap-2">
+               <SparklesIcon className="w-3.5 h-3.5 text-cyan-400" />
+               Difficulty Calibration
+            </h4>
+            <div className="flex gap-2">
+              {["Easy", "Medium", "Hard"].map((lvl) => (
+                <button
+                  key={lvl}
+                  onClick={() => setDifficulty(lvl as any)}
+                  className={`flex-1 py-3 px-4 rounded-xl font-black uppercase tracking-tighter text-[11px] transition-all border ${
+                    difficulty === lvl 
+                      ? "bg-slate-950 border-cyan-400/50 text-white shadow-lg italic" 
+                      : "bg-transparent border-transparent text-slate-600 hover:text-slate-400 hover:bg-slate-800"
+                  }`}
+                >
+                  {lvl}
+                </button>
+              ))}
+            </div>
         </div>
-      )}
+
+        <div className="bg-slate-900 p-6 rounded-3xl border border-white/5 shadow-xl space-y-4">
+            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest italic flex items-center gap-2">
+               <SparklesIcon className="w-3.5 h-3.5 text-indigo-400" />
+               Quantity Threshold
+            </h4>
+            <div className="flex gap-2">
+              {[5, 10, 15].map((count) => (
+                <button
+                  key={count}
+                  onClick={() => setQuestionCount(count)}
+                  className={`flex-1 py-3 px-4 rounded-xl font-black uppercase tracking-tighter text-[11px] transition-all border ${
+                    questionCount === count 
+                      ? "bg-slate-950 border-indigo-400/50 text-white shadow-lg italic" 
+                      : "bg-transparent border-transparent text-slate-600 hover:text-slate-400 hover:bg-slate-800"
+                  }`}
+                >
+                  {count} Qs
+                </button>
+              ))}
+            </div>
+        </div>
+      </div>
+
+      {/* Primary CTA */}
+      <div className="pt-6">
+          <button 
+            onClick={onGenerate}
+            disabled={isLoading || !value.trim()}
+            className="w-full relative group/gen disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+             <div className="absolute -inset-1 bg-gradient-to-r from-cyan-400 via-indigo-600 to-purple-500 rounded-[28px] blur-sm opacity-20 group-hover/gen:opacity-100 transition duration-1000" />
+             <div className="relative bg-[#05070a] hover:bg-black py-6 rounded-[24px] border-2 border-slate-900 flex items-center justify-center gap-6 transition-all shadow-3xl group-hover/gen:border-cyan-400/30">
+                {isLoading ? (
+                  <>
+                    <div className="w-6 h-6 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+                    <span className="text-xl font-black text-white italic uppercase tracking-tighter">Calibrating Neural Sync...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-xl font-black text-white italic uppercase tracking-tighter">Initialize Intelligence Synthesis</span>
+                    <div className="w-8 h-8 rounded-full bg-cyan-400 text-slate-900 flex items-center justify-center group-hover/gen:translate-x-3 transition-transform">
+                       <ChevronRightIcon className="w-5 h-5" />
+                    </div>
+                  </>
+                )}
+             </div>
+          </button>
+          <p className="text-center mt-6 text-[10px] font-black text-slate-600 uppercase tracking-[0.2em] italic">
+             Neural Extraction Technology © 2026 / Smart Academic Core
+          </p>
+      </div>
+
     </div>
   );
 }

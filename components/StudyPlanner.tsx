@@ -157,9 +157,9 @@ export default function StudyPlanner() {
   const [todaysTasks, setTodaysTasks] = useState<any[]>([]);
 
   useEffect(() => {
-    const tasks = profile.events.flatMap(event => {
+    const tasks = profile.events.flatMap((event: Event) => {
       const schedule = calculateEventSchedule(event);
-      return schedule.map((task, idx) => ({
+      return schedule.map((task: any, idx: number) => ({
         ...task,
         eventId: event.id,
         internalId: `task-${event.id}-${idx}`,

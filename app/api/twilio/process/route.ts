@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
 import twilio from "twilio";
-import Groq from "groq-sdk";
+import groq from "@/lib/groq";
 import fs from "fs";
 import path from "path";
-
-const apiKey = process.env.GROQ_API_KEY;
-const groq = new Groq({ apiKey });
 
 export async function POST(req: Request) {
   try {

@@ -1,11 +1,6 @@
 import Groq from "groq-sdk";
 
-const apiKey = process.env.GROQ_API_KEY;
-
-if (!apiKey) {
-  throw new Error("Missing GROQ_API_KEY environment variable");
-}
-
+const apiKey = process.env.GROQ_API_KEY || "dummy_key_for_build";
 const client = new Groq({ apiKey });
 
 type ChatMessage = {
